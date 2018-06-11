@@ -37,7 +37,7 @@ how and what fields of metric to collect.
 
 ## License
 
-Copyright © 2018 LeanCloud
+Copyright © 2018 Juvenn Woo
 
 Distributed under the Eclipse Public License either version 1.0 or (at
 your option) any later version.
