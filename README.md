@@ -8,7 +8,7 @@ how and what fields of metric to collect.
 
 ## Usage
 
-```
+```clojure
 (require '[influnx-reporter.reporter :as rep])
 
 (def reg (MetricRegistry.))
