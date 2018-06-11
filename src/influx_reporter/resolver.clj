@@ -1,28 +1,12 @@
 (ns influx-reporter.resolver
-  "Resolve Metric into measurement.
-
-  `ValuesResolver` serves as a default resolver to resolve Counter,
-   Gauge, Meter, Histogram and Timer into values map. It collects only
-   rate_1m of a Meter and Timer, and assumes rate-unit in seconds,
-   while duration-unit in ms.
-
-   It can be extended, for example if a rate_5m is desired:
-     
-   ```
-   (proxy [ValuesResolver] []
-    (resolveTimer [^Meter meter]
-      {:rate_1m (.getOneMinuteRate meter)
-       :rate_5m (.getFiveMinuteRate Meter)}))
-   ```
-  "
+  "Resolve Metric into interested measurement."
   (:require [clojure.string :as s])
   (:import [java.util.concurrent TimeUnit]
-           [com.codahale.metrics Metric
-            Counter Gauge Meter Histogram Timer])
-  (:gen-class :name influx_reporter.ValuesResolver))
+           [com.codahale.metrics Metric Clock
+            Counter Gauge Meter Histogram Timer]))
 
 (defn dotted-tag-resolver
-  "Resolve dotted metric name as influx measurement and tags.
+  "Resolve dotted metric name as measurement and tags.
    Returns measurement and tags pair.
 
    E.g.:
@@ -45,13 +29,13 @@
        (apply assoc {} (rest ks))])))
 
 (defn rate-scale
-  "Returns an fn that convert per-second rate vaule into of unit."
+  "Returns an fn that convert per-second rate vaule into other unit."
   [^TimeUnit unit]
   (fn [v]
     (* v (.toSeconds unit 1))))
 
 (defn duration-scale
-  "Returns an fn that convert duration value in ns into of unit."
+  "Returns an fn that convert duration value in ns into other unit."
   [^TimeUnit unit]
   (fn [v]
     (/ v (.toNanos unit 1) 1.0)))
@@ -59,35 +43,26 @@
 (def rate->s identity)
 (def duration->ms (duration-scale TimeUnit/MILLISECONDS))
 
-(defn -resolveCounter [this ^Counter counter]
+(defn resolve-counter [^Counter counter]
   {:count (.getCount counter)})
 
-(defn -resolveGauge [this ^Gauge gauge]
+(defn resolve-gauge [^Gauge gauge]
   {:value (.getValue gauge)})
 
-(defn -resolveMeter [this ^Meter meter]
-  ;; Only cut 1m rate , as 5m, 15m rate can be easily rollup in influx. 
+(defn resolve-meter
+  "Resolve Meter values. Meter rate is measured in per second by default."
+  [^Meter meter]
   {:rate_1m  (rate->s (.getOneMinuteRate meter))
    ;; :rate_5m  (rate->s (.getFiveMinuteRate meter))
    ;; :rate_15m  (rate->s (.getFifteenMinuteRate meter))
    ;; :rate_mean  (rate->s (.getMeanRate meter))
    :count    (.getCount    meter)})
 
-(defn -resolveHistogram [this ^Histogram histogram]
-  (let [snapshot (.getSnapshot histogram)]
-    {:count (.getCount histogram)
-     :mean  (.getMean           snapshot)
-     :min   (.getMin            snapshot)
-     :max   (.getMax            snapshot)
-     :p50   (.getMedian         snapshot)
-     :p75   (.get75thPercentile snapshot)
-     :p95   (.get95thPercentile snapshot)
-     :p99   (.get99thPercentile snapshot)
-     :p999  (.get999thPercentile snapshot)}))
-
-(defn -resolveTimer [this ^Timer timer]
-  ;; Timer by default record rate by seconds, and duration in
-  ;; nanoseconds.
+(defn resolve-timer
+  "Resolve Timer values. Timer is a combination of Meter and Histogram.
+  the rate is measured in per second, while duration is measured in ns,
+  of which we scale it to ms."
+  [^Timer timer]
   (let [snapshot (.getSnapshot timer)]
     {:count (.getCount timer)
      :rate_1m  (rate->s (.getOneMinuteRate timer))
@@ -105,11 +80,53 @@
      :p99   (duration->ms (.get99thPercentile snapshot))
      :p999  (duration->ms (.get999thPercentile snapshot))}))
 
-(defn -resolveValues [this ^Metric metric]
+(defn resolve-histogram [^Histogram histogram]
+  (let [snapshot (.getSnapshot histogram)]
+    {:count (.getCount histogram)
+     :mean  (.getMean           snapshot)
+     :min   (.getMin            snapshot)
+     :max   (.getMax            snapshot)
+     :p50   (.getMedian         snapshot)
+     :p75   (.get75thPercentile snapshot)
+     :p95   (.get95thPercentile snapshot)
+     :p99   (.get99thPercentile snapshot)
+     ;; :p98   (.get98thPercentile snapshot)
+     :p999  (.get999thPercentile snapshot)}))
+
+(defn resolve-values
+  [{:keys [counter-resolver gauge-resolver meter-resolver
+           timer-resolver histogram-resolver]
+    :or {counter-resolver resolve-counter
+         gauge-resolver resolve-gauge
+         meter-resolver resolve-meter
+         timer-resolver resolve-timer
+         histogram-resolver resolve-histogram}}
+   ^Metric metric]
   (condp instance? metric
-    Counter (.resolveCounter metric)
-    Gauge   (.resolveGauge   metric)
-    Meter   (.resolveMeter   metric)
-    Timer   (.resolveTimer   metric)
-    Histogram (.resolveHistogram metric)
+    Counter   (counter-resolver metric)
+    Gauge     (gauge-resolver metric)
+    Meter     (meter-resolver metric)
+    Timer     (timer-resolver metric)
+    Histogram (histogram-resolver metric)
     :else {}))
+
+(defonce clock (Clock/defaultClock))
+
+(defn resolve-measurement
+  "Resolve metric to measurement."
+  [{:keys [default-tags
+           tags-resolver]
+    :or {tags-resolver dotted-tag-resolver}
+    :as opts}
+   ^String name
+   ^Metric metric]
+  (let [values (resolve-values opts metric)]
+    (when (seq values)
+      (let [[measurement tags] (tags-resolver name)
+            ;; timestamp in s
+            ts (quot (.getTime clock) 1000)]
+        {:measurement measurement
+         :tags (merge default-tags tags)
+         :values values
+         :ts ts}))))
+
