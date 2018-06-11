@@ -84,6 +84,7 @@
     (.remove reg name)))
 
 (defn ^ScheduledReporter reporter
+  "Build a ScheduledReporter that collect metrics and send to influxdb."
   [& {:keys [^MetricRegistry registry
              ^MetricFilter metric-filter
              ^TimeUnit rate-unit
