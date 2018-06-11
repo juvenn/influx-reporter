@@ -30,7 +30,7 @@
   "Write lines of measurements to influxdb."
   [influx-spec & lines]
   (let [url (influx-url influx-spec)]
-    (log/info "Sending %s points to influxdb." (count lines))
+    (log/infof "Sending %s points to influxdb." (count lines))
     (loop [lines lines]
       (when-let [[xs ys] (split-at 100 lines)]
         (when-let [resp (try
@@ -89,12 +89,12 @@
              ^MetricFilter metric-filter
              ^TimeUnit rate-unit
              ^TimeUnit duration-unit
-             ^Fn tags-resolver
-             ^Fn counter-resolver
-             ^Fn gauge-resolver
-             ^Fn meter-resolver
-             ^Fn histogram-resolver
-             ^Fn timer-resolver
+             ^clojure.lang.IFn tags-resolver
+             ^clojure.lang.IFn counter-resolver
+             ^clojure.lang.IFn gauge-resolver
+             ^clojure.lang.IFn meter-resolver
+             ^clojure.lang.IFn histogram-resolver
+             ^clojure.lang.IFn timer-resolver
              default-tags
              clear-metrics?]
       :or {metric-filter MetricFilter/ALL
