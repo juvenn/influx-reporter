@@ -79,6 +79,10 @@
        (map serialize-measure)
        (apply send-data influx-spec)))
 
+(defn- clear-reg-metrics [reg]
+  (doseq [name (.getNames reg)]
+    (.remove reg name)))
+
 (defn ^ScheduledReporter reporter
   [& {:keys [^MetricRegistry registry
              ^MetricFilter metric-filter
@@ -90,16 +94,20 @@
              ^Fn meter-resolver
              ^Fn histogram-resolver
              ^Fn timer-resolver
-             default-tags]
+             default-tags
+             clear-metrics?]
       :or {metric-filter MetricFilter/ALL
            rate-unit TimeUnit/SECONDS
-           duration-unit TimeUnit/MILLISECONDS}
+           duration-unit TimeUnit/MILLISECONDS
+           clear-metrics? true}
       :as opts}]
   (proxy [ScheduledReporter]
       [registry "influx-reporter" metric-filter
        rate-unit duration-unit]
     (report
       ([gauges counters histograms meters timers]
+       (when clear-metrics?
+         (clear-reg-metrics registry))
        (send-report opts
                     counters
                     gauges
@@ -107,13 +115,12 @@
                     histograms
                     timers))
       ([]
-       ;; Lock reg and clearing metrics?
-       (send-report opts
-                    (.getCounters   registry metric-filter)
-                    (.getGauges     registry metric-filter)
-                    (.getMeters     registry metric-filter)
-                    (.getTimers     registry metric-filter)
-                    (.getHistograms registry metric-filter))))))
+       (.report this
+                (.getGauges     registry metric-filter)
+                (.getCounters   registry metric-filter)
+                (.getHistograms registry metric-filter)
+                (.getMeters     registry metric-filter)
+                (.getTimers     registry metric-filter))))))
 
 (defn start
   "Start sending report every seconds."
