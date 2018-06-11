@@ -112,6 +112,9 @@
 
 (defonce clock (Clock/defaultClock))
 
+(defn get-clock-ms []
+  (.getTime clock))
+
 (defn resolve-measurement
   "Resolve metric to measurement."
   [{:keys [default-tags
@@ -124,7 +127,7 @@
     (when (seq values)
       (let [[measurement tags] (tags-resolver name)
             ;; timestamp in s
-            ts (quot (.getTime clock) 1000)]
+            ts (quot (get-clock-ms) 1000)]
         {:measurement measurement
          :tags (merge default-tags tags)
          :values values

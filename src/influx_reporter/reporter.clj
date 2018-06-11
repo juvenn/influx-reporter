@@ -1,52 +1,96 @@
 (ns influx-reporter.reporter
-  (:require [clojure.string :as s])
+  (:require [clojure.string :as s]
+            [clj-http.conn-mgr :refer [make-reusable-conn-manager]]
+            [clj-http.client :as http]
+            [influx-reporter.resolver :as res]
+            [clojure.tools.logging :as log])
   (:import [java.util.concurrent TimeUnit]
-           [influx_reporter ValuesResolver]
            [com.codahale.metrics
-            Metric
-            MetricRegistry
-            MetricFilter
+            Metric MetricRegistry MetricFilter
             ScheduledReporter]))
 
-(defn- serialize-measure
-  "Serialize measurement map to influxdb line."
-  [measure])
-
-(defn- -influx-url [influx-spec])
+(defn- write-url [{:keys [url db] :as spec}]
+  (if (and url db)
+    (str (if (s/ends-with? url "/")
+           url
+           (str url "/"))
+         "write?"
+         "db=" db
+         "&"
+         "precision=s")
+    (throw (ex-info "Please set influx url and db." {}))))
 
 (def influx-url
   "Build influx write url according to spec."
-  (memoize -influx-url))
+  (memoize write-url))
 
-(defn- send-data
+(def cm (make-reusable-conn-manager {}))
+
+(defn send-data
   "Write lines of measurements to influxdb."
   [influx-spec & lines]
-  (println influx-spec lines))
+  (let [url (influx-url influx-spec)]
+    (log/info "Sending %s points to influxdb." (count lines))
+    (loop [lines lines]
+      (when-let [[xs ys] (split-at 100 lines)]
+        (when-let [resp (try
+                          (http/post url {:connection-manager cm
+                                          :body (s/join "\n" xs)})
+                          (catch clojure.lang.ExceptionInfo ex
+                            (log/errorf "Send data to %s failed:"
+                                        url (:body (ex-data ex))))
+                          (catch Exception ex
+                            (log/errorf ex "Send data to %s failed." url)))]
+          (if (<= 200 (:status resp 0) 299)
+            (if (seq ys)
+              (recur ys)
+              true)
+            (log/errorf "Send data to %s failed: %s" url (:body resp))))))))
 
-(defn- resolve-metric [{:keys [default-tags
-                               values-resolver
-                               tags-resolver]}
-                       ^String name
-                       ^Metric metric]
-  (let [values (values-resolver metric)]
-    (when-not (empty? values)
-      (let [[measurement tags] (tags-resolver name)]
-        {:measurement measurement
-         :tags (merge default-tags tags)
-         :values values}))))
+(comment
+  (send-data {:url "http://127.0.0.1:8086/"
+              :db "reporter"}
+             "cpu_load,host=air.local value=0.6"))
 
-(defn- send-report [opts & metrics]
+(defn- map->line [m]
+  (->> m
+       (map (fn [[k v]] (str (name k) "=" v)))
+       (s/join ",")))
+
+(defn- serialize-measure
+  "Serialize measurement map to influxdb line."
+  [{:keys [measurement tags values ts]}]
+  (when (seq values)
+    (str measurement
+         (when (seq tags)
+          (str "," (map->line tags)))
+         " "
+         (map->line values)
+         (when ts
+           (str " " ts)))))
+
+(defn- resolve-metric [opts [name metric :as map-entry]]
+  (res/resolve-measurement opts name metric))
+
+(defn send-report
+  [{:keys [influx-spec] :as opts} & metrics]
   (->> metrics
-       (mapcat
-        (fn [ms]
-          (map (fn [[k metric]]
-                 (resolve-metric opts k metric))
-               ms)))))
+       (mapcat #(map (partial resolve-metric opts) %))
+       (map serialize-measure)
+       (apply send-data influx-spec)))
 
 (defn ^ScheduledReporter reporter
   [& {:keys [^MetricRegistry registry
              ^MetricFilter metric-filter
-             rate-unit duration-unit]
+             ^TimeUnit rate-unit
+             ^TimeUnit duration-unit
+             ^Fn tags-resolver
+             ^Fn counter-resolver
+             ^Fn gauge-resolver
+             ^Fn meter-resolver
+             ^Fn histogram-resolver
+             ^Fn timer-resolver
+             default-tags]
       :or {metric-filter MetricFilter/ALL
            rate-unit TimeUnit/SECONDS
            duration-unit TimeUnit/MILLISECONDS}
@@ -57,12 +101,13 @@
     (report
       ([gauges counters histograms meters timers]
        (send-report opts
-                    gauges
                     counters
-                    histograms
+                    gauges
                     meters
+                    histograms
                     timers))
       ([]
+       ;; Lock reg and clearing metrics?
        (send-report opts
                     (.getCounters   registry metric-filter)
                     (.getGauges     registry metric-filter)
@@ -70,28 +115,23 @@
                     (.getTimers     registry metric-filter)
                     (.getHistograms registry metric-filter))))))
 
-(def reg (MetricRegistry.))
+(defn start
+  "Start sending report every seconds."
+  [^ScheduledReporter reporter ^Long seconds]
+  (.start reporter seconds TimeUnit/SECONDS))
 
-(defn stat-item []
-  (.inc (.counter reg "my-count"))
-  (.update (.histogram reg "my-histo") (rand-int 10))
-  (.mark (.meter reg "my-meter")))
-
-(comment
-  (reporter
-   :registry ""
-   :influx-spec {
-                 :influx-url ""
-                 :influx-db ""
-                 }
-   :metric-filter MetricFilter/ALL
-   :rate-unit TimeUnit/SECONDS
-   :duration-unit TimeUnit/MILLISECONDS
-   :tags-resolver identity
-   :values-resolver identity
-   :tags {}))
-
+(defn stop
+  [^ScheduledReporter reporter]
+  (.stop reporter))
 
 (comment
-  (proxy [ValuesResolver] []
-      (resolve-timer [m] {:a 42})))
+  (def reg (MetricRegistry.))
+
+  (def my-influx {:url "http://127.0.0.1:8086/"
+                  :db "reporter"})
+
+  (def my-reporter
+    (reporter :registry reg
+              :influx-spec my-influx
+              :default-tags {:host "air.local"})))
+
