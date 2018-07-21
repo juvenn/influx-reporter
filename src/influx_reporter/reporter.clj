@@ -79,10 +79,6 @@
        (map serialize-measure)
        (apply send-data influx-spec)))
 
-(defn- clear-reg-metrics [reg]
-  (doseq [name (.getNames reg)]
-    (.remove reg name)))
-
 (defn ^ScheduledReporter reporter
   "Build a ScheduledReporter that collect metrics and send to influxdb."
   [& {:keys [^MetricRegistry registry
@@ -95,20 +91,16 @@
              ^clojure.lang.IFn meter-resolver
              ^clojure.lang.IFn histogram-resolver
              ^clojure.lang.IFn timer-resolver
-             default-tags
-             clear-metrics?]
+             default-tags]
       :or {metric-filter MetricFilter/ALL
            rate-unit TimeUnit/SECONDS
-           duration-unit TimeUnit/MILLISECONDS
-           clear-metrics? true}
+           duration-unit TimeUnit/MILLISECONDS}
       :as opts}]
   (proxy [ScheduledReporter]
       [registry "influx-reporter" metric-filter
        rate-unit duration-unit]
     (report
       ([gauges counters histograms meters timers]
-       (when clear-metrics?
-         (clear-reg-metrics registry))
        (send-report opts
                     counters
                     gauges
