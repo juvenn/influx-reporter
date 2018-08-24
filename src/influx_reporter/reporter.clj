@@ -37,7 +37,7 @@
                           (http/post url {:connection-manager cm
                                           :body (s/join "\n" xs)})
                           (catch clojure.lang.ExceptionInfo ex
-                            (log/errorf "Send data to %s failed:"
+                            (log/errorf "Send data to %s failed: %s"
                                         url (:body (ex-data ex))))
                           (catch Exception ex
                             (log/errorf ex "Send data to %s failed." url)))]
