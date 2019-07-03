@@ -54,7 +54,7 @@
 
 (defn- map->line [m]
   (->> m
-       (map (fn [[k v]] (str (name k) "=" v)))
+       (map (fn [[k v]] (str (name k) "=" (s/replace v #"[, =]+" "_"))))
        (s/join ",")))
 
 (defn- serialize-measure
