@@ -52,10 +52,23 @@
               :db "reporter"}
              "cpu_load,host=air.local value=0.6"))
 
+(defn- encode-kv
+  "Encode kv pair as k=v."
+  [[k v]]
+  (str (name k)
+       "="
+       (-> (or v "null")
+           name
+           (s/replace #"[, =]+" "_"))))
+
 (defn- map->line [m]
   (->> m
-       (map (fn [[k v]] (str (name k) "=" (s/replace v #"[, =]+" "_"))))
+       (map encode-kv)
        (s/join ",")))
+
+(comment
+  (= (map->line {:k nil :hello "Apache-HttpAsyncClient/4,1=3 (Java/1,8=0_201)"})
+     "k=null,hello=Apache-HttpAsyncClient/4_1_3_(Java/1_8_0_201)"))
 
 (defn- serialize-measure
   "Serialize measurement map to influxdb line."
