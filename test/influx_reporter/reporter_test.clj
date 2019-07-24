@@ -14,10 +14,11 @@
                                   [influx-spec lines])
                   res/get-clock-ms (constantly 1000)]
       (is (= [my-influx
-              ["req.count,host=air.local count=1 1"
-               "req.du,host=air.local p999=5.0,min=5,mean=5.0,p75=5.0,p99=5.0,max=5,count=1,p50=5.0,p95=5.0 1"]]
+              ["req.count,host=air.local,ua=Apache-HttpAsyncClient/4_1_3_(Java/1_8_0_201) count=1 1"
+               "req.du,host=air.local,ua=Apache-HttpAsyncClient/4_1_3_(Java/1_8_0_201) p999=5.0,min=5,mean=5.0,p75=5.0,p99=5.0,max=5,count=1,p50=5.0,p95=5.0 1"]]
              (rep/send-report {:influx-spec my-influx
-                               :default-tags {:host "air.local"}}
+                               :default-tags {:host "air.local"
+                                              :ua "Apache-HttpAsyncClient/4,1=3 (Java/1,8=0_201)"}}
                               (.getCounters   reg)
                               (.getHistograms reg)))))))
 
