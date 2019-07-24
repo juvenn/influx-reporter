@@ -52,14 +52,21 @@
               :db "reporter"}
              "cpu_load,host=air.local value=0.6"))
 
+(defn- encode-v [v]
+  (cond
+    (nil? v) "null"
+    (number? v) v
+    (string? v) (s/replace v #"[, =]+" "_")
+    :else (do
+            (log/warn "Unexpected influx tag/field value:" v)
+            "_invalid_")))
+
 (defn- encode-kv
   "Encode kv pair as k=v."
   [[k v]]
   (str (name k)
        "="
-       (-> (or v "null")
-           name
-           (s/replace #"[, =]+" "_"))))
+       (encode-v v)))
 
 (defn- map->line [m]
   (->> m
