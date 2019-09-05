@@ -111,7 +111,9 @@
              ^clojure.lang.IFn meter-resolver
              ^clojure.lang.IFn histogram-resolver
              ^clojure.lang.IFn timer-resolver
-             default-tags]
+             ^clojure.lang.IFn after-report
+             default-tags
+             reset-metrics?]
       :or {metric-filter MetricFilter/ALL
            rate-unit TimeUnit/SECONDS
            duration-unit TimeUnit/MILLISECONDS}
@@ -126,7 +128,11 @@
                     gauges
                     meters
                     histograms
-                    timers))
+                    timers)
+       (when after-report
+         (after-report))
+       (when reset-metrics?
+         (.removeMatching registry metric-filter)))
       ([]
        (.report this
                 (.getGauges     registry metric-filter)
@@ -153,5 +159,6 @@
   (def my-reporter
     (reporter :registry reg
               :influx-spec my-influx
+              :reset-metrics? true
               :default-tags {:host "air.local"})))
 
