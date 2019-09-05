@@ -22,3 +22,20 @@
                               (.getCounters   reg)
                               (.getHistograms reg)))))))
 
+(deftest test-reset-metrics
+  (let [reg (MetricRegistry.)
+        my-influx {:url "http://127.0.0.1:8086/"
+                   :db "reporter"}
+        _ (.inc (.counter reg "req.count"))
+        cnt (atom 1)
+        reporter (rep/reporter :registry reg
+                               :influx-spec my-influx
+                               :reset-metrics? true
+                               :after-report (fn []
+                                               (swap! cnt inc)))]
+    (is (= 1 (count (.getNames reg))))
+    (rep/start reporter 1)
+    (Thread/sleep 1100)
+    (is (= 2 @cnt))
+    (is (= 0 (count (.getNames reg))))
+    (rep/stop reporter)))
