@@ -21,7 +21,7 @@
 
 (def cm (make-reusable-conn-manager {}))
 
-(defn- log-metrics [ifnlux-spec & lines]
+(defn- log-metrics [influx-spec & lines]
   (doseq [line lines]
     (log/info "metric" line)))
 
