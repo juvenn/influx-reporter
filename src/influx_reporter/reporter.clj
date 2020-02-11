@@ -21,29 +21,35 @@
 
 (def cm (make-reusable-conn-manager {}))
 
+(defn- log-metrics [ifnlux-spec & lines]
+  (doseq [line lines]
+    (log/info "metric" line)))
+
 (defn send-data
   "Write lines of measurements to influxdb."
   [influx-spec & lines]
-  (let [url (influx-url influx-spec)
-        params (merge {:precision "s"}
-                      (dissoc influx-spec :url))]
-    (log/infof "Sending %s points to influxdb." (count lines))
-    (loop [lines lines]
-      (when-let [[xs ys] (split-at 100 lines)]
-        (when-let [resp (try
-                          (http/post url {:connection-manager cm
-                                          :query-params params
-                                          :body (s/join "\n" xs)})
-                          (catch clojure.lang.ExceptionInfo ex
-                            (log/errorf "Send data to %s failed: %s"
-                                        url (:body (ex-data ex))))
-                          (catch Exception ex
-                            (log/errorf ex "Send data to %s failed." url)))]
-          (if (<= 200 (:status resp 0) 299)
-            (if (seq ys)
-              (recur ys)
-              true)
-            (log/errorf "Send data to %s failed: %s" url (:body resp))))))))
+  (if (:debug? influx-spec)
+    (apply log-metrics influx-spec lines)
+    (let [url (influx-url influx-spec)
+          params (merge {:precision "s"}
+                        (dissoc influx-spec :url :debug?))]
+      (log/infof "Sending %s points to influxdb." (count lines))
+      (loop [lines lines]
+        (when-let [[xs ys] (split-at 100 lines)]
+          (when-let [resp (try
+                            (http/post url {:connection-manager cm
+                                            :query-params params
+                                            :body (s/join "\n" xs)})
+                            (catch clojure.lang.ExceptionInfo ex
+                              (log/errorf "Send data to %s failed: %s"
+                                          url (:body (ex-data ex))))
+                            (catch Exception ex
+                              (log/errorf ex "Send data to %s failed." url)))]
+            (if (<= 200 (:status resp 0) 299)
+              (if (seq ys)
+                (recur ys)
+                true)
+              (log/errorf "Send data to %s failed: %s" url (:body resp)))))))))
 
 (comment
   (send-data {:url "http://127.0.0.1:8086/"
