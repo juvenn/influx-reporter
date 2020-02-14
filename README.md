@@ -32,7 +32,6 @@ how and what fields of metric to collect.
 
 ### Features not supported yet
 
-* No http auth for InfluxDB
 * No https for InfluxDB
 
 ## License
