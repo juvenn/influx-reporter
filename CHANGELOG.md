@@ -1,8 +1,12 @@
-# Change Log
+## [0.4.0] - 2020-02-14
 
-All notable changes to this project will be documented in this file. This
-change log follows the conventions of
-[keepachangelog.com](http://keepachangelog.com/).
+* Support batch-size param
+
+## [0.3.0] - 2020-02-12
+
+* Support influx url params
+* Support http auth
+* Add debug mode
 
 ## [0.2.0] - 2019-09-05
 

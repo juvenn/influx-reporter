@@ -1,4 +1,4 @@
-(defproject influx-reporter "0.3.0"
+(defproject influx-reporter "0.4.0"
   :description "InfluxDB reporter for dropwizard metrics"
   :url "https://github.com/juvenn/influx-reporter"
   :license {:name "Eclipse Public License"
