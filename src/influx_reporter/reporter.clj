@@ -31,11 +31,12 @@
   (if (:debug? influx-spec)
     (apply log-metrics influx-spec lines)
     (let [url (influx-url influx-spec)
+          batch (:batch-size influx-spec 5120)
           params (merge {:precision "s"}
-                        (dissoc influx-spec :url :debug?))]
+                        (select-keys influx-spec [:db :precision :rp :u :p :consistency]))]
       (log/infof "Sending %s points to influxdb." (count lines))
       (loop [lines lines]
-        (when-let [[xs ys] (split-at 100 lines)]
+        (when-let [[xs ys] (split-at batch lines)]
           (when-let [resp (try
                             (http/post url {:connection-manager cm
                                             :query-params params
@@ -104,8 +105,24 @@
        (apply send-data influx-spec)))
 
 (defn ^ScheduledReporter reporter
-  "Build a ScheduledReporter that collect metrics and send to influxdb."
-  [& {:keys [^MetricRegistry registry
+  "Build a ScheduledReporter that collect metrics and send to influxdb.
+  
+  The `influx-spec` param supports following options:
+  
+  :url - required, influx url
+  :db  - required, influx db
+  :rp  - optional, retention policy
+  :u   - optional, username
+  :p   - optional, password
+  :debug?      - optional, log metrics instead if true
+  :batch-size  - optional, default 5120, number of points to write per req
+  :precision   - optional, default `s`
+  :consistency - optional, default `one`
+
+  See https://docs.influxdata.com/influxdb/v1.7/tools/api/#query-string-parameters-2.
+  "
+  [& {:keys [influx-spec
+             ^MetricRegistry registry
              ^MetricFilter metric-filter
              ^TimeUnit rate-unit
              ^TimeUnit duration-unit
